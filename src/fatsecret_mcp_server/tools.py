@@ -72,6 +72,7 @@ def register_tools(server: MCPServer, runtime: Runtime, profile: Profile) -> Non
     async def set_credentials(
         consumer_key: str | None = None,
         consumer_secret: str | None = None,
+        account_id: str | None = None,
         access_token: str | None = None,
         access_secret: str | None = None,
         username: str | None = None,
@@ -83,17 +84,20 @@ def register_tools(server: MCPServer, runtime: Runtime, profile: Profile) -> Non
                 "credential tools are disabled; configure environment variables or "
                 "set FATSECRET_MCP_ALLOW_CREDENTIAL_TOOLS=true"
             )
+        if (access_token is None) != (access_secret is None):
+            raise ValueError("access_token and access_secret must be provided together")
         values = {
             "consumer_key": consumer_key,
             "consumer_secret": consumer_secret,
-            "access_token": access_token,
-            "access_secret": access_secret,
+            "account_id": account_id,
             "username": username,
             "password": password,
         }
         for name, value in values.items():
             if value is not None:
                 runtime.credentials.set(name, value)
+        if access_token is not None and access_secret is not None:
+            runtime.credentials.set_oauth_session(access_token, access_secret)
         return runtime.invoke("set_credentials", runtime.credentials.status)
 
     @tool("start_oauth_flow")

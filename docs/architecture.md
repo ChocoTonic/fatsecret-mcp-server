@@ -31,6 +31,9 @@ remain separate providers.
 Mutations use an account-namespaced durable SQLite request journal and an
 account-scoped interprocess file lease. Recipe copies use the backend's
 checkpointed copy service and bind operation IDs to the originating account.
+Official user mutations require a stable configured account ID; rotating OAuth
+tokens therefore cannot change idempotency or locking namespaces. Each mutation
+binds one credential snapshot for its complete execution.
 FatSecret-provided `Retry-After` deadlines are authoritative and are not
 shortened by a local request budget.
 

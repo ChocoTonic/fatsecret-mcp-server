@@ -19,7 +19,10 @@ def test_only_explicitly_reviewed_reads_are_executable() -> None:
     capabilities = latest_capabilities()
     assert {
         name for name, capability in capabilities.items() if capability.executable
-    } == EXECUTABLE_READS
+    } == set(EXECUTABLE_READS)
+    assert all(
+        capabilities[name].method == method for name, method in EXECUTABLE_READS.items()
+    )
     assert capabilities["exercises.entries_commit_day"].executable is False
 
 

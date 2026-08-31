@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from pathlib import Path
 
@@ -5,7 +6,11 @@ import pytest
 import requests
 from fatsecret import FatsecretWebIdempotencyConflictError
 
-from fatsecret_mcp_server.credentials import CredentialStore
+from fatsecret_mcp_server.credentials import (
+    CredentialStore,
+    MemberCredentials,
+    OfficialCredentials,
+)
 from fatsecret_mcp_server.runtime import Runtime
 from fatsecret_mcp_server.settings import Settings
 
@@ -14,8 +19,17 @@ class StubCredentials(CredentialStore):
     def __init__(self, identity: str = "test") -> None:
         self.identity = identity
 
-    def account_identity(self, provider: str) -> str:
-        return f"{self.identity}-{provider}"
+    def member(self) -> MemberCredentials:
+        return MemberCredentials(f"{self.identity}-member", "password")
+
+    def official(self, *, require_session: bool = False) -> OfficialCredentials:
+        return OfficialCredentials(
+            "key",
+            "secret",
+            f"{self.identity}-official",
+            f"{self.identity}-token",
+            f"{self.identity}-token-secret",
+        )
 
 
 def runtime(tmp_path: Path) -> Runtime:
@@ -150,6 +164,15 @@ def test_state_permissions_are_private(tmp_path: Path) -> None:
     assert execution.settings.database_path.parent.stat().st_mode & 0o777 == 0o700
 
 
+def test_insecure_existing_state_directory_is_rejected(tmp_path: Path) -> None:
+    state_directory = tmp_path / "insecure"
+    state_directory.mkdir(mode=0o777)
+    os.chmod(state_directory, 0o777)
+
+    with pytest.raises(RuntimeError, match="group- or world-writable"):
+        runtime(state_directory)
+
+
 def test_idempotency_is_namespaced_by_account(tmp_path: Path) -> None:
     settings = Settings(database_path=tmp_path / "shared.sqlite3")
     first = Runtime(settings, credentials=StubCredentials("first"))
@@ -166,3 +189,25 @@ def test_idempotency_is_namespaced_by_account(tmp_path: Path) -> None:
         )
 
     assert calls == ["first", "second"]
+
+
+def test_mutation_uses_one_credential_snapshot(tmp_path: Path) -> None:
+    credentials = StubCredentials("first")
+    execution = Runtime(
+        Settings(database_path=tmp_path / "snapshot.sqlite3"),
+        credentials=credentials,
+    )
+
+    def mutate() -> str | None:
+        credentials.identity = "second"
+        return execution.official_client(user_session=True).access_token
+
+    result = execution.idempotent_mutation(
+        scope="test",
+        provider="official",
+        key="snapshot-key",
+        payload={},
+        callback=mutate,
+    )
+
+    assert result == "first-token"

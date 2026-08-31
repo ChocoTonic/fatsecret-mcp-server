@@ -387,7 +387,7 @@ wheels = [
 
 [[package]]
 name = "fatsecret-mcp-server"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "fatsecret" },
@@ -409,7 +409,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fatsecret", specifier = ">=5.0.0,<6" },
+    { name = "fatsecret", specifier = "==5.0.0" },
     { name = "filelock", specifier = ">=3.19,<4" },
     { name = "keyring", specifier = ">=25.6,<26" },
     { name = "mcp", specifier = ">=2.1,<3" },

@@ -19,7 +19,10 @@ uvx --refresh --from git+https://github.com/ChocoTonic/fatsecret-mcp-server \
 ```
 
 `uvx --refresh` is the update mechanism. The running server does not rewrite
-its own executable or dependency environment.
+its own executable or dependency environment. Each server release pins the
+reviewed `fatsecret` backend and exact resolver-executable endpoint versions;
+backend upgrades arrive through a tested server release rather than being
+silently selected at startup.
 
 ## Configure
 
@@ -30,6 +33,7 @@ export FATSECRET_CONSUMER_KEY=...
 export FATSECRET_CONSUMER_SECRET=...
 export FATSECRET_ACCESS_TOKEN=...       # required for user-scoped tools
 export FATSECRET_ACCESS_SECRET=...
+export FATSECRET_ACCOUNT_ID=...         # stable account label for mutations
 ```
 
 Member recipe and RDI credentials:

@@ -28,35 +28,33 @@ _WRITE_TERMS = frozenset(
     {"add", "copy", "create", "delete", "edit", "save", "submit", "update"}
 )
 _DENIED = frozenset({"profile.get_auth"})
-EXECUTABLE_READS = frozenset(
-    {
-        "classification.brands_get",
-        "classification.categories_get",
-        "classification.sub_categories_get",
-        "diary.entries_get",
-        "diary.entries_get_month",
-        "exercises.entries_get",
-        "exercises.entries_get_month",
-        "exercises.list",
-        "foods.autocomplete",
-        "foods.find_id_for_barcode",
-        "foods.get",
-        "foods.search",
-        "meals.get",
-        "meals.items_get",
-        "native.image_recognition",
-        "native.natural_language_processing",
-        "profile.get",
-        "profile_foods.get_favorites",
-        "profile_foods.get_most_eaten",
-        "profile_foods.get_recently_eaten",
-        "recipes.get",
-        "recipes.get_favorites",
-        "recipes.search",
-        "recipes.types_get",
-        "weight.get_month",
-    }
-)
+EXECUTABLE_READS = {
+    "classification.brands_get": "brands_get_v2",
+    "classification.categories_get": "categories_get_v2",
+    "classification.sub_categories_get": "sub_categories_get_v2",
+    "diary.entries_get": "entries_get_v2",
+    "diary.entries_get_month": "entries_get_month_v2",
+    "exercises.entries_get": "entries_get_v2",
+    "exercises.entries_get_month": "entries_get_month_v2",
+    "exercises.list": "list_v2",
+    "foods.autocomplete": "autocomplete_v2",
+    "foods.find_id_for_barcode": "find_id_for_barcode_v2",
+    "foods.get": "get_v5",
+    "foods.search": "search_v5",
+    "meals.get": "get_v2",
+    "meals.items_get": "items_get_v2",
+    "native.image_recognition": "image_recognition_v2",
+    "native.natural_language_processing": "natural_language_processing_v1",
+    "profile.get": "get_v1",
+    "profile_foods.get_favorites": "get_favorites_v2",
+    "profile_foods.get_most_eaten": "get_most_eaten_v2",
+    "profile_foods.get_recently_eaten": "get_recently_eaten_v2",
+    "recipes.get": "get_v2",
+    "recipes.get_favorites": "get_favorites_v2",
+    "recipes.search": "search_v3",
+    "recipes.types_get": "types_get_v2",
+    "weight.get_month": "get_month_v2",
+}
 _PUBLIC_READS = frozenset(
     name
     for name in EXECUTABLE_READS
@@ -78,7 +76,7 @@ def executable_reads_for_profile(profile: Profile) -> frozenset[str]:
         return _PUBLIC_READS | _DIARY_READS
     if profile == "default":
         return _PUBLIC_READS | _DIARY_READS | {"profile.get"}
-    return EXECUTABLE_READS
+    return frozenset(EXECUTABLE_READS)
 
 
 RESOURCE_CLASSES = {
@@ -134,7 +132,7 @@ def latest_capabilities() -> dict[str, Capability]:
                 version=version,
                 description=(inspect.getdoc(method) or "").split("\n", 1)[0],
                 mutating=bool(words & _WRITE_TERMS),
-                executable=name in EXECUTABLE_READS,
+                executable=EXECUTABLE_READS.get(name) == method_name,
                 parameters=tuple(
                     name
                     for name in inspect.signature(method).parameters

@@ -11,6 +11,7 @@ import time
 import uuid
 from collections.abc import Callable
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -31,7 +32,7 @@ from fatsecret.web.service import (
 from filelock import FileLock
 
 from .capabilities import serialize
-from .credentials import CredentialStore
+from .credentials import CredentialStore, MemberCredentials, OfficialCredentials
 from .settings import Settings
 from .telemetry import Telemetry
 
@@ -47,12 +48,17 @@ class Runtime:
     ) -> None:
         self.settings = settings
         self.credentials = credentials or CredentialStore()
+        self._bound_credentials: ContextVar[
+            OfficialCredentials | MemberCredentials | None
+        ] = ContextVar("fatsecret_bound_credentials", default=None)
         self.session_id = uuid.uuid4().hex
         self._oauth_flows: dict[str, tuple[float, Fatsecret]] = {}
         self._oauth_lock = threading.Lock()
         self._mutation_lock = threading.Lock()
         self._copy_lock = threading.Lock()
         parent_existed = settings.database_path.parent.exists()
+        if parent_existed:
+            _validate_state_parent(settings.database_path.parent)
         settings.database_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if not parent_existed:
             os.chmod(settings.database_path.parent, 0o700)
@@ -78,7 +84,12 @@ class Runtime:
         )
 
     def official_client(self, *, user_session: bool = False) -> Fatsecret:
-        credentials = self.credentials.official(require_session=user_session)
+        bound = self._bound_credentials.get()
+        credentials = (
+            bound
+            if isinstance(bound, OfficialCredentials)
+            else self.credentials.official(require_session=user_session)
+        )
         session = None
         if credentials.access_token and credentials.access_secret:
             session = (credentials.access_token, credentials.access_secret)
@@ -91,7 +102,10 @@ class Runtime:
         )
 
     def web_client(self) -> FatsecretWebClient:
-        credentials = self.credentials.member()
+        bound = self._bound_credentials.get()
+        credentials = (
+            bound if isinstance(bound, MemberCredentials) else self.credentials.member()
+        )
         return FatsecretWebClient(
             credentials.username,
             credentials.password,
@@ -126,8 +140,7 @@ class Runtime:
         if flow is None or time.monotonic() - flow[0] >= 600:
             raise RuntimeError("OAuth flow is missing or expired")
         token, secret = flow[1].authenticate(verifier)
-        self.credentials.set("access_token", token)
-        self.credentials.set("access_secret", secret)
+        self.credentials.set_oauth_session(token, secret)
         return {"oauth1_session": True}
 
     def invoke(self, tool_name: str, callback: Callable[[], T]) -> Any:
@@ -169,7 +182,8 @@ class Runtime:
         payload: object,
         callback: Callable[[], T],
     ) -> Any:
-        account = self.credentials.account_identity(provider)
+        snapshot = self._credential_snapshot(provider)
+        account = self.credentials.account_identity(provider, snapshot)
         durable_scope = f"{provider}:{account}:{scope}"
         existing = self.idempotency.begin(durable_scope, key, payload)
         if existing is not None:
@@ -181,6 +195,7 @@ class Runtime:
                     f"{existing['error']}"
                 )
             raise RuntimeError("a mutation with this idempotency key is in progress")
+        binding = self._bound_credentials.set(snapshot)
         try:
             with self.mutation_lease(account):
                 while True:
@@ -213,6 +228,8 @@ class Runtime:
         except Exception:
             self._discard_idempotency(durable_scope, key)
             raise
+        finally:
+            self._bound_credentials.reset(binding)
         serialized = serialize(result)
         self.idempotency.complete(
             durable_scope, key, status_code=200, response=serialized
@@ -222,33 +239,55 @@ class Runtime:
     def start_copy(
         self, source_recipe_id: int, title: str, idempotency_key: str
     ) -> Any:
-        account = self.credentials.account_identity("member")
+        snapshot = self.credentials.member()
+        account = self.credentials.account_identity("member", snapshot)
         durable_key = hashlib.sha256(
             f"{account}:{idempotency_key}".encode()
         ).hexdigest()
-        with self.mutation_lease(account):
-            operation = self.copy_service.start_copy(
-                source_recipe_id, title, durable_key
-            )
-            with sqlite3.connect(self.settings.database_path, timeout=30) as connection:
-                connection.execute(
-                    "INSERT OR IGNORE INTO operation_accounts "
-                    "(operation_id, account_identity) VALUES (?, ?)",
-                    (operation.operation_id, account),
+        binding = self._bound_credentials.set(snapshot)
+        try:
+            with self.mutation_lease(account):
+                operation = self.copy_service.start_copy(
+                    source_recipe_id, title, durable_key
                 )
-                connection.commit()
-            return self.copy_service.run_copy(operation.operation_id)
+                with sqlite3.connect(
+                    self.settings.database_path, timeout=30
+                ) as connection:
+                    connection.execute(
+                        "INSERT OR IGNORE INTO operation_accounts "
+                        "(operation_id, account_identity) VALUES (?, ?)",
+                        (operation.operation_id, account),
+                    )
+                    connection.commit()
+                return self.copy_service.run_copy(operation.operation_id)
+        finally:
+            self._bound_credentials.reset(binding)
 
     def get_copy(self, operation_id: str) -> Any:
-        account = self.credentials.account_identity("member")
+        snapshot = self.credentials.member()
+        account = self.credentials.account_identity("member", snapshot)
         self._assert_operation_account(operation_id, account)
         return self.copy_service.get_copy(operation_id)
 
     def resume_copy(self, operation_id: str) -> Any:
-        account = self.credentials.account_identity("member")
+        snapshot = self.credentials.member()
+        account = self.credentials.account_identity("member", snapshot)
         self._assert_operation_account(operation_id, account)
-        with self.mutation_lease(account):
-            return self.copy_service.run_copy(operation_id)
+        binding = self._bound_credentials.set(snapshot)
+        try:
+            with self.mutation_lease(account):
+                return self.copy_service.run_copy(operation_id)
+        finally:
+            self._bound_credentials.reset(binding)
+
+    def _credential_snapshot(
+        self, provider: str
+    ) -> OfficialCredentials | MemberCredentials:
+        if provider == "member":
+            return self.credentials.member()
+        if provider == "official":
+            return self.credentials.official(require_session=True)
+        raise ValueError(f"unknown provider: {provider}")
 
     def _assert_operation_account(self, operation_id: str, account: str) -> None:
         with sqlite3.connect(self.settings.database_path, timeout=30) as connection:
@@ -282,6 +321,17 @@ class Runtime:
 
 def state_database(path: str | Path) -> Path:
     return Path(path).expanduser().resolve()
+
+
+def _validate_state_parent(path: Path) -> None:
+    if path.is_symlink():
+        raise RuntimeError("state directory must not be a symbolic link")
+    status = path.stat()
+    getuid = getattr(os, "getuid", None)
+    if getuid is not None and status.st_uid != getuid():
+        raise RuntimeError("state directory must be owned by the current user")
+    if status.st_mode & 0o022:
+        raise RuntimeError("state directory must not be group- or world-writable")
 
 
 def _parse_retry_after(value: str | None) -> float | None:
