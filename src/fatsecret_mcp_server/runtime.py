@@ -52,8 +52,10 @@ class Runtime:
         self._oauth_lock = threading.Lock()
         self._mutation_lock = threading.Lock()
         self._copy_lock = threading.Lock()
+        parent_existed = settings.database_path.parent.exists()
         settings.database_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        os.chmod(settings.database_path.parent, 0o700)
+        if not parent_existed:
+            os.chmod(settings.database_path.parent, 0o700)
         self.telemetry = Telemetry(
             settings.database_path, enabled=settings.telemetry_enabled
         )

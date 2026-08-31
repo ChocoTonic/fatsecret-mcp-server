@@ -144,7 +144,8 @@ def test_definitive_failure_releases_idempotency_key(tmp_path: Path) -> None:
 
 
 def test_state_permissions_are_private(tmp_path: Path) -> None:
-    execution = runtime(tmp_path)
+    state_directory = tmp_path / "new-private-directory"
+    execution = runtime(state_directory)
     assert execution.settings.database_path.stat().st_mode & 0o777 == 0o600
     assert execution.settings.database_path.parent.stat().st_mode & 0o777 == 0o700
 
