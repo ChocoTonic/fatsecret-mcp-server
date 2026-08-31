@@ -1,0 +1,27 @@
+from fatsecret_mcp_server.capabilities import EXECUTABLE_READS, latest_capabilities
+
+
+def test_latest_versions_are_selected() -> None:
+    capabilities = latest_capabilities()
+    assert capabilities["foods.get"].method == "get_v5"
+    assert capabilities["foods.search"].method == "search_v5"
+    assert capabilities["recipes.search"].method == "search_v3"
+    assert capabilities["weight.get_month"].method == "get_month_v2"
+
+
+def test_mutations_are_classified() -> None:
+    capabilities = latest_capabilities()
+    assert capabilities["diary.entry_create"].mutating is True
+    assert capabilities["foods.get"].mutating is False
+
+
+def test_only_explicitly_reviewed_reads_are_executable() -> None:
+    capabilities = latest_capabilities()
+    assert {
+        name for name, capability in capabilities.items() if capability.executable
+    } == EXECUTABLE_READS
+    assert capabilities["exercises.entries_commit_day"].executable is False
+
+
+def test_sensitive_auth_operation_is_not_discoverable() -> None:
+    assert "profile.get_auth" not in latest_capabilities()
