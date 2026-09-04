@@ -83,6 +83,7 @@ def _goal_for_category(category: str) -> str:
         "diary": "manage_diary",
         "weight": "inspect_weight",
         "rdi": "manage_rdi",
+        "member_diary": "manage_member_diary",
         "member_recipe": "manage_owned_recipe",
         "discovery": "discover_capability",
     }[category]

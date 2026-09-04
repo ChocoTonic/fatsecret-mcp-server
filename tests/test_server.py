@@ -64,6 +64,8 @@ async def test_mutation_schemas_require_idempotency_keys(tmp_path: Path) -> None
     for name in (
         "add_food_entry",
         "set_member_rdi",
+        "add_member_diary_entry",
+        "delete_member_diary_entry",
         "create_member_recipe",
         "replace_member_recipe",
         "delete_member_recipe",
@@ -93,6 +95,26 @@ async def test_ingredient_schema_uses_food_id_and_optional_portion(
     assert "food_id" in schema["required"]
     assert "amount" in schema["required"]
     assert "portion_id" not in schema["required"]
+
+
+@pytest.mark.asyncio
+async def test_member_diary_schema_accepts_website_portion_sentinels(
+    tmp_path: Path,
+) -> None:
+    server = create_server(
+        Settings(
+            profile="full",
+            database_path=tmp_path / "state.sqlite3",
+            telemetry_enabled=False,
+        )
+    )
+    tools = {tool.name: tool for tool in await server.list_tools()}
+    schema = tools["add_member_diary_entry"].input_schema
+
+    assert "item_id" in schema["required"]
+    assert "date" in schema["required"]
+    assert "portion_id" not in schema["required"]
+    assert schema["properties"]["portion_id"].get("exclusiveMinimum") is None
 
 
 @pytest.mark.asyncio

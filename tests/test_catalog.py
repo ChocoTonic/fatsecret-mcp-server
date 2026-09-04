@@ -16,6 +16,11 @@ EXPECTED = {
     "get_weight_month",
     "get_member_rdi",
     "set_member_rdi",
+    "list_member_diary_entries",
+    "get_member_diary_entry",
+    "list_member_diary_item_portions",
+    "add_member_diary_entry",
+    "delete_member_diary_entry",
     "list_member_recipes",
     "get_member_recipe",
     "create_member_recipe",
@@ -34,7 +39,7 @@ EXPECTED = {
 
 def test_inventory_is_exact() -> None:
     assert {policy.name for policy in TOOL_POLICIES} == EXPECTED
-    assert len(TOOL_POLICIES) == 28
+    assert len(TOOL_POLICIES) == 33
 
 
 def test_resolver_is_in_every_profile() -> None:
