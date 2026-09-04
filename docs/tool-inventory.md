@@ -20,6 +20,11 @@
 
 - `get_member_rdi`
 - `set_member_rdi`
+- `list_member_diary_entries`
+- `get_member_diary_entry`
+- `list_member_diary_item_portions`
+- `add_member_diary_entry`
+- `delete_member_diary_entry`
 - `list_member_recipes`
 - `get_member_recipe`
 - `create_member_recipe`

@@ -369,7 +369,7 @@ wheels = [
 
 [[package]]
 name = "fatsecret"
-version = "5.0.0"
+version = "5.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bs4" },
@@ -380,14 +380,14 @@ dependencies = [
     { name = "requests-oauthlib" },
     { name = "tenacity" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b9/c3/8e962ceb7943a6054dab0368eb7759fce473dcfbfc4c24eb98085bd4997b/fatsecret-5.0.0.tar.gz", hash = "sha256:c0ac00ae53e8a32242da54856b5b180a06337ac6948ce9a5fb573b5fbd19ba5f", size = 57152, upload-time = "2026-08-31T05:50:25.84Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d8/4a/34be5e97c1b5204c2bfef51ccffb1a6dfc198991c7449f2326f76dd230a5/fatsecret-5.1.0.tar.gz", hash = "sha256:51c95921afcd3d07fa5dcf962a9491deee677bb7ba2f26877905b86736cb861e", size = 60466, upload-time = "2026-09-04T07:42:06.835Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ab/a3/31977c03c1b8676376306597602ec9b09de50887f628c167487c9ca381ca/fatsecret-5.0.0-py3-none-any.whl", hash = "sha256:5c5b737e81fb08f18d0bc6d6bf78abe9428372c42019e4c6d0776d76d6e71065", size = 75585, upload-time = "2026-08-31T05:50:24.995Z" },
+    { url = "https://files.pythonhosted.org/packages/51/a1/03fa2ad4074e36b10d376803442c370e15e5767846145bec287ddd47c94b/fatsecret-5.1.0-py3-none-any.whl", hash = "sha256:b712cc763da35c48513e635c1d35ac2fa1b4ecab1e2ce82aa600cbd437d856a3", size = 79576, upload-time = "2026-09-04T07:42:05.76Z" },
 ]
 
 [[package]]
 name = "fatsecret-mcp-server"
-version = "0.1.1"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "fatsecret" },
@@ -409,7 +409,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fatsecret", specifier = "==5.0.0" },
+    { name = "fatsecret", specifier = ">=5.1.0,<6" },
     { name = "filelock", specifier = ">=3.19,<4" },
     { name = "keyring", specifier = ">=25.6,<26" },
     { name = "mcp", specifier = ">=2.1,<3" },

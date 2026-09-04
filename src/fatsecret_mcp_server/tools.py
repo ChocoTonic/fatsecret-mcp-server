@@ -10,6 +10,9 @@ from typing import Annotated, Any, Literal
 
 from anyio import to_thread
 from fatsecret import (
+    GeneralError,
+    WebDiaryEntryWrite,
+    WebDiaryMeal,
     WebIngredientWrite,
     WebMealType,
     WebRecipeCopyRequest,
@@ -31,6 +34,7 @@ from .settings import Profile
 Meal = Literal["breakfast", "lunch", "dinner", "other"]
 PositiveId = Annotated[int, Field(gt=0)]
 PositiveAmount = Annotated[float, Field(gt=0)]
+EpochDay = Annotated[int, Field(ge=0)]
 IdempotencyKey = Annotated[str, Field(min_length=8, max_length=255)]
 Page = Annotated[int, Field(ge=0)]
 Limit = Annotated[int, Field(ge=1, le=50)]
@@ -50,6 +54,27 @@ def register_tools(server: MCPServer, runtime: Runtime, profile: Profile) -> Non
         active.difference_update(
             {"set_credentials", "start_oauth_flow", "complete_oauth_flow"}
         )
+    compatible_methods: dict[str, str] = {}
+
+    def latest_compatible(name: str, candidates: list[tuple[str, Any]]) -> Any:
+        cached = compatible_methods.get(name)
+        ordered = candidates
+        if cached is not None:
+            ordered = sorted(candidates, key=lambda item: item[0] != cached)
+        last_unknown: GeneralError | None = None
+        for method_name, callback in ordered:
+            try:
+                result = callback()
+            except GeneralError as error:
+                if error.code != 10:
+                    raise
+                last_unknown = error
+                continue
+            compatible_methods[name] = method_name
+            return result
+        if last_unknown is not None:
+            raise last_unknown
+        raise RuntimeError(f"no reviewed methods are configured for {name}")
 
     def tool(name: str):
         def register(callback: Any) -> Any:
@@ -98,6 +123,7 @@ def register_tools(server: MCPServer, runtime: Runtime, profile: Profile) -> Non
                 runtime.credentials.set(name, value)
         if access_token is not None and access_secret is not None:
             runtime.credentials.set_oauth_session(access_token, access_secret)
+        compatible_methods.clear()
         return runtime.invoke("set_credentials", runtime.credentials.status)
 
     @tool("start_oauth_flow")
@@ -142,26 +168,52 @@ def register_tools(server: MCPServer, runtime: Runtime, profile: Profile) -> Non
         region: str | None = None,
         language: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Search foods with the latest reviewed Platform endpoint."""
+        """Search foods with the latest Platform endpoint available to the account."""
 
         def search() -> Any:
-            return runtime.official_client().foods.search_v5(
-                search_expression=query,
-                page_number=page,
-                max_results=limit,
-                region=region,
-                language=language,
+            foods = runtime.official_client().foods
+            common = {
+                "search_expression": query,
+                "page_number": page,
+                "max_results": limit,
+            }
+            localized = {**common, "region": region, "language": language}
+            candidates = [
+                ("search_v5", lambda: foods.search_v5(**localized)),
+                ("search_v4", lambda: foods.search_v4(**localized)),
+                ("search_v3", lambda: foods.search_v3(**localized)),
+                ("search_v2", lambda: foods.search_v2(**localized)),
+            ]
+            if region is None and language is None:
+                candidates.append(("search_v1", lambda: foods.search_v1(**common)))
+            return latest_compatible(
+                "foods.search",
+                candidates,
             )
 
         return await _thread(runtime.invoke, "search_foods", search)
 
     @tool("get_food")
     async def get_food(food_id: PositiveId) -> dict[str, Any] | None:
-        """Get one food by exact FatSecret food ID using the latest endpoint."""
+        """Get a food by ID using the latest endpoint available to the account."""
+
+        def get() -> Any:
+            foods = runtime.official_client().foods
+            return latest_compatible(
+                "foods.get",
+                [
+                    ("get_v5", lambda: foods.get_v5(food_id)),
+                    ("get_v4", lambda: foods.get_v4(food_id)),
+                    ("get_v3", lambda: foods.get_v3(food_id)),
+                    ("get_v2", lambda: foods.get_v2(food_id)),
+                    ("get_v1", lambda: foods.get_v1(food_id)),
+                ],
+            )
+
         return await _thread(
             runtime.invoke,
             "get_food",
-            lambda: runtime.official_client().foods.get_v5(food_id),
+            get,
         )
 
     @tool("search_recipes")
@@ -288,6 +340,103 @@ def register_tools(server: MCPServer, runtime: Runtime, profile: Profile) -> Non
             )
 
         return await _thread(runtime.invoke, "set_member_rdi", replace)
+
+    @tool("list_member_diary_entries")
+    async def list_member_diary_entries(date: EpochDay) -> list[dict[str, Any]]:
+        """List fully hydrated member-site diary entries for one epoch-day."""
+
+        def list_all() -> Any:
+            with runtime.web_client() as client:
+                return client.list_diary_entries(date)
+
+        return await _thread(runtime.invoke, "list_member_diary_entries", list_all)
+
+    @tool("get_member_diary_entry")
+    async def get_member_diary_entry(
+        entry_id: PositiveId, date: EpochDay
+    ) -> dict[str, Any]:
+        """Get one member-site diary entry by entry ID and epoch-day."""
+
+        def get() -> Any:
+            with runtime.web_client() as client:
+                return client.get_diary_entry(entry_id, date)
+
+        return await _thread(runtime.invoke, "get_member_diary_entry", get)
+
+    @tool("list_member_diary_item_portions")
+    async def list_member_diary_item_portions(
+        item_id: PositiveId, date: EpochDay
+    ) -> dict[str, Any]:
+        """List member-diary portions for a food or owned recipe ID."""
+
+        def portions() -> Any:
+            with runtime.web_client() as client:
+                return client.list_diary_item_portions(item_id, date)
+
+        return await _thread(
+            runtime.invoke, "list_member_diary_item_portions", portions
+        )
+
+    @tool("add_member_diary_entry")
+    async def add_member_diary_entry(
+        item_id: PositiveId,
+        entry_name: RecipeTitle,
+        amount: PositiveAmount,
+        meal: WebDiaryMeal,
+        date: EpochDay,
+        idempotency_key: IdempotencyKey,
+        portion_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Add a food or owned recipe to the member diary exactly once."""
+
+        entry = WebDiaryEntryWrite(
+            item_id=item_id,
+            entry_name=entry_name,
+            amount=Decimal(str(amount)),
+            meal=meal,
+            date=date,
+            portion_id=portion_id,
+        )
+
+        def add() -> Any:
+            def mutate() -> Any:
+                with runtime.web_client() as client:
+                    return client.add_diary_entry(entry)
+
+            return runtime.idempotent_mutation(
+                scope="member-diary-entry:create",
+                provider="member",
+                key=idempotency_key,
+                payload=entry.model_dump(mode="json"),
+                callback=mutate,
+            )
+
+        return await _thread(runtime.invoke, "add_member_diary_entry", add)
+
+    @tool("delete_member_diary_entry")
+    async def delete_member_diary_entry(
+        entry_id: PositiveId,
+        date: EpochDay,
+        idempotency_key: IdempotencyKey,
+    ) -> dict[str, Any]:
+        """Delete one member diary entry and verify absence exactly once."""
+
+        payload = {"entry_id": entry_id, "date": date}
+
+        def delete() -> Any:
+            def mutate() -> Any:
+                with runtime.web_client() as client:
+                    return client.delete_diary_entry(entry_id, date)
+
+            return runtime.idempotent_mutation(
+                scope=f"member-diary-entry:{entry_id}:delete",
+                provider="member",
+                key=idempotency_key,
+                payload=payload,
+                callback=mutate,
+            )
+
+        return await _thread(runtime.invoke, "delete_member_diary_entry", delete)
 
     @tool("list_member_recipes")
     async def list_member_recipes() -> list[dict[str, Any]]:
@@ -601,6 +750,7 @@ def register_tools(server: MCPServer, runtime: Runtime, profile: Profile) -> Non
                 {
                     "name": item.name,
                     "backend_method": f"{item.resource}.{item.method}",
+                    "provider": item.provider,
                     "version": item.version,
                     "description": item.description,
                     "parameters": item.parameters,
@@ -621,10 +771,15 @@ def register_tools(server: MCPServer, runtime: Runtime, profile: Profile) -> Non
                     raise ValueError(
                         "resolver execution is read-only; use a reviewed mutation tool"
                     )
-                client = runtime.official_client()
-                resource = getattr(client, capability.resource)
-                method = getattr(resource, capability.method)
-                response["result"] = await _thread(method, **(arguments or {}))
+                if capability.provider == "member":
+                    with runtime.web_client() as client:
+                        method = getattr(client, capability.method)
+                        response["result"] = await _thread(method, **(arguments or {}))
+                else:
+                    client = runtime.official_client()
+                    resource = getattr(client, capability.resource)
+                    method = getattr(resource, capability.method)
+                    response["result"] = await _thread(method, **(arguments or {}))
                 response["result"] = serialize(response["result"])
         except Exception:
             runtime.record_resolver(selected, started, "error")

@@ -20,12 +20,24 @@ from fatsecret.resources import (
     RecipesResource,
     WeightResource,
 )
+from fatsecret.web import FatsecretWebClient
 
 from .settings import Profile
 
 _VERSIONED = re.compile(r"^(?P<family>.+)_v(?P<version>\d+)$")
 _WRITE_TERMS = frozenset(
-    {"add", "copy", "create", "delete", "edit", "save", "submit", "update"}
+    {
+        "add",
+        "copy",
+        "create",
+        "delete",
+        "edit",
+        "replace",
+        "save",
+        "set",
+        "submit",
+        "update",
+    }
 )
 _DENIED = frozenset({"profile.get_auth"})
 EXECUTABLE_READS = {
@@ -65,6 +77,37 @@ _DIARY_READS = frozenset(
     for name in EXECUTABLE_READS
     if name.startswith(("diary.", "exercises.", "meals.", "profile_foods.", "weight."))
 )
+MEMBER_WEB_METHODS = frozenset(
+    {
+        "add_diary_entry",
+        "add_recipe_ingredient",
+        "create_recipe",
+        "delete_diary_entry",
+        "delete_recipe",
+        "delete_recipe_ingredient",
+        "get_diary_entry",
+        "get_rdi",
+        "get_recipe",
+        "list_diary_entries",
+        "list_diary_item_portions",
+        "list_food_portions",
+        "list_recipes",
+        "replace_recipe",
+        "replace_recipe_ingredient",
+        "set_rdi",
+    }
+)
+MEMBER_WEB_READS = frozenset(
+    {
+        "member_web.get_diary_entry",
+        "member_web.get_rdi",
+        "member_web.get_recipe",
+        "member_web.list_diary_entries",
+        "member_web.list_diary_item_portions",
+        "member_web.list_food_portions",
+        "member_web.list_recipes",
+    }
+)
 
 
 def executable_reads_for_profile(profile: Profile) -> frozenset[str]:
@@ -76,6 +119,8 @@ def executable_reads_for_profile(profile: Profile) -> frozenset[str]:
         return _PUBLIC_READS | _DIARY_READS
     if profile == "default":
         return _PUBLIC_READS | _DIARY_READS | {"profile.get"}
+    if profile in {"member", "full"}:
+        return frozenset(EXECUTABLE_READS) | MEMBER_WEB_READS
     return frozenset(EXECUTABLE_READS)
 
 
@@ -105,6 +150,7 @@ class Capability:
     mutating: bool
     executable: bool
     parameters: tuple[str, ...]
+    provider: str = "official"
 
 
 def latest_capabilities() -> dict[str, Capability]:
@@ -142,7 +188,28 @@ def latest_capabilities() -> dict[str, Capability]:
             key = (resource_name, family)
             if key not in latest or latest[key].version < version:
                 latest[key] = capability
-    return {capability.name: capability for capability in latest.values()}
+    capabilities = {capability.name: capability for capability in latest.values()}
+    for method_name in MEMBER_WEB_METHODS:
+        method = getattr(FatsecretWebClient, method_name)
+        words = set(method_name.split("_"))
+        name = f"member_web.{method_name}"
+        capabilities[name] = Capability(
+            name=name,
+            resource="member_web",
+            method=method_name,
+            family=method_name,
+            version=1,
+            description=(inspect.getdoc(method) or "").split("\n", 1)[0],
+            mutating=bool(words & _WRITE_TERMS),
+            executable=name in MEMBER_WEB_READS,
+            parameters=tuple(
+                parameter
+                for parameter in inspect.signature(method).parameters
+                if parameter != "self"
+            ),
+            provider="member",
+        )
+    return capabilities
 
 
 def serialize(value: Any) -> Any:

@@ -2,7 +2,7 @@
 
 An independent Python MCP server backed by the `fatsecret` package. It exposes
 the supported FatSecret Platform API separately from experimental member-site
-recipe and RDI operations.
+recipe, diary, and RDI operations.
 
 This project has independent source code and Git history. Compatibility tool
 names were transcribed from a pre-existing public tool list; no implementation,
@@ -19,10 +19,10 @@ uvx --refresh --from git+https://github.com/ChocoTonic/fatsecret-mcp-server \
 ```
 
 `uvx --refresh` is the update mechanism. The running server does not rewrite
-its own executable or dependency environment. Each server release pins the
-reviewed `fatsecret` backend and exact resolver-executable endpoint versions;
-backend upgrades arrive through a tested server release rather than being
-silently selected at startup.
+its own executable or dependency environment. Each server release constrains
+the reviewed `fatsecret` backend. Official food reads prefer the latest
+reviewed method and cache the newest version accepted by the configured
+account; only upstream error 10 triggers an older-method fallback.
 
 ## Configure
 
@@ -36,7 +36,7 @@ export FATSECRET_ACCESS_SECRET=...
 export FATSECRET_ACCOUNT_ID=...         # stable account label for mutations
 ```
 
-Member recipe and RDI credentials:
+Member recipe, diary, and RDI credentials:
 
 ```bash
 export FATSECRET_USERNAME=...
@@ -66,9 +66,17 @@ files are restricted to the current operating-system user.
 
 Recipe ingredients use a known FatSecret `food_id`. Omit `portion_id` for grams,
 or first call `list_member_food_portions` to select an exact opaque portion ID.
+The member website stores gram quantities as whole numbers; fractional grams
+are rejected before writing.
 
-Member recipe and RDI operations automate unsupported FatSecret website forms
-and can break when that website changes.
+Member diary tools accept both foods and owned recipes. Omit `portion_id` to
+select grams when available or the sole recipe serving. Website portion IDs
+`-1` (grams) and `0` (owned recipe serving) are valid here and intentionally
+remain separate from official API serving IDs. Recipe diary entries snapshot
+nutrition, so delete and re-add affected diary entries after recipe changes.
+
+Member recipe, diary, and RDI operations automate unsupported FatSecret website
+forms and can break when that website changes.
 
 See [architecture](docs/architecture.md) and the
 [tool inventory](docs/tool-inventory.md).

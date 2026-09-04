@@ -13,7 +13,7 @@ OpenAPI contract, and the official MCP Python SDK.
 ## Sources of truth
 
 - FatSecret Platform OAS: supported HTTP operations and payload models.
-- FatSecret member-web OAS: experimental recipe and RDI HTTP semantics.
+- FatSecret member-web OAS: experimental recipe, diary, and RDI HTTP semantics.
 - `fatsecret` Python API: retries, authentication, parsing, and verification.
 - `catalog.py`: MCP naming, profiles, mutation classification, and exposure.
 - Typed functions in `tools.py`: MCP input schemas and handler descriptions.
@@ -39,11 +39,17 @@ shortened by a local request budget.
 
 ## Discovery and observability
 
-The resolver inspects public versioned backend resource methods and retains the
-highest numeric version for each operation family. Discovery does not imply
+The resolver inspects public versioned Platform resource methods, combines them
+with an explicit reviewed member-web method list, and retains the highest
+numeric Platform version for each operation family. Discovery does not imply
 authorization: execution is limited to a static reviewed read allowlist and the
 active profile. Authentication metadata is excluded. Writes must use reviewed,
 typed tools.
+
+Advertisement and runtime compatibility are separate. Food tools try reviewed
+versions newest-first and fall back only when FatSecret returns error 10 for an
+unknown method. The accepted method is cached for the server process; a restart
+rechecks the newest version. Other upstream failures are not masked.
 
 SQLite telemetry stores tool name, category, inferred goal class, outcome,
 duration, resolver reach, and selected capability names. It does not store tool

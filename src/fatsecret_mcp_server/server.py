@@ -25,7 +25,9 @@ def create_server(
         version=__version__,
         instructions=(
             "Use exact food IDs for member recipe ingredients. Supply a unique "
-            "idempotency key for every mutation and reuse it after a timeout."
+            "idempotency key for every mutation and reuse it after a timeout. "
+            "Member-site grams must be whole numbers. Recipe diary entries "
+            "snapshot nutrition; delete and re-add them after recipe changes."
         ),
     )
     register_tools(server, execution, configuration.profile)
