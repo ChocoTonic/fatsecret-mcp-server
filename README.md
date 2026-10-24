@@ -80,3 +80,16 @@ forms and can break when that website changes.
 
 See [architecture](docs/architecture.md) and the
 [tool inventory](docs/tool-inventory.md).
+
+### Diary dates and configuration errors
+
+MCP date arguments are whole days since January 1, 1970: October 23, 2026 is
+`20749`. Platform diary reads, writes, and weight reads convert that value to a
+calendar date before passing it to the Python library, whose numeric date
+arguments represent Unix seconds. Member-site methods already accept epoch-days.
+
+Official diary writes also require `FATSECRET_ACCOUNT_ID` (or the `account_id`
+keyring entry), a stable, non-secret label for the authenticated account. Keep
+that label across token rotation so idempotency records remain associated with
+the same account. Missing labels produce an actionable tool error before any
+write is attempted; unexpected exceptions remain masked.
