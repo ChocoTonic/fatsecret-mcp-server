@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from datetime import date as calendar_date
 from decimal import Decimal
 from functools import partial
 from typing import Annotated, Any, Literal
@@ -34,7 +35,7 @@ from .settings import Profile
 Meal = Literal["breakfast", "lunch", "dinner", "other"]
 PositiveId = Annotated[int, Field(gt=0)]
 PositiveAmount = Annotated[float, Field(gt=0)]
-EpochDay = Annotated[int, Field(ge=0)]
+EpochDay = Annotated[int, Field(ge=0, le=2932896)]
 IdempotencyKey = Annotated[str, Field(min_length=8, max_length=255)]
 Page = Annotated[int, Field(ge=0)]
 Limit = Annotated[int, Field(ge=1, le=50)]
@@ -42,6 +43,11 @@ Calories = Annotated[int, Field(ge=1, le=100_000)]
 RecipeTitle = Annotated[str, Field(min_length=1, max_length=255)]
 RecipeDescription = Annotated[str, Field(min_length=1, max_length=2000)]
 Directions = Annotated[list[str], Field(max_length=8)]
+
+
+def _platform_date(day: int | None) -> calendar_date | None:
+    """Convert MCP epoch-days; the Platform library treats numbers as seconds."""
+    return None if day is None else calendar_date(1970, 1, 1) + timedelta(days=day)
 
 
 async def _thread(callback: Any, /, *args: Any, **kwargs: Any) -> Any:
@@ -255,14 +261,14 @@ def register_tools(server: MCPServer, runtime: Runtime, profile: Profile) -> Non
 
     @tool("get_user_food_entries")
     async def get_user_food_entries(
-        date: int | None = None, food_entry_id: str | None = None
+        date: EpochDay | None = None, food_entry_id: str | None = None
     ) -> list[dict[str, Any]]:
         """Get authenticated food diary entries by epoch-day or entry ID."""
         return await _thread(
             runtime.invoke,
             "get_user_food_entries",
             lambda: runtime.official_client(user_session=True).diary.entries_get_v2(
-                date=date, food_entry_id=food_entry_id
+                date=_platform_date(date), food_entry_id=food_entry_id
             ),
         )
 
@@ -274,7 +280,7 @@ def register_tools(server: MCPServer, runtime: Runtime, profile: Profile) -> Non
         number_of_units: PositiveAmount,
         meal: Meal,
         idempotency_key: IdempotencyKey,
-        date: int | None = None,
+        date: EpochDay | None = None,
     ) -> list[dict[str, Any]]:
         """Add a food diary entry once, keyed by a durable idempotency value."""
         payload = {
@@ -294,19 +300,20 @@ def register_tools(server: MCPServer, runtime: Runtime, profile: Profile) -> Non
                 payload=payload,
                 callback=lambda: runtime.official_client(
                     user_session=True
-                ).diary.entry_create_v1(**payload),
+                ).diary.entry_create_v1(**{**payload, "date": _platform_date(date)}),
             )
 
         return await _thread(runtime.invoke, "add_food_entry", create)
 
     @tool("get_weight_month")
-    async def get_weight_month(date: int | None = None) -> list[dict[str, Any]]:
+    async def get_weight_month(date: EpochDay | None = None) -> list[dict[str, Any]]:
         """Get authenticated weight records for the month containing an epoch-day."""
         return await _thread(
             runtime.invoke,
             "get_weight_month",
+            # The generated weight annotation omits supported calendar dates.
             lambda: runtime.official_client(user_session=True).weight.get_month_v2(
-                date=date
+                date=_platform_date(date)  # pyright: ignore[reportArgumentType]
             ),
         )
 

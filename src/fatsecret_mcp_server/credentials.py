@@ -14,6 +14,10 @@ import keyring
 SERVICE = "fatsecret-mcp-server"
 
 
+class ConfigurationError(RuntimeError):
+    """A configuration error whose message is safe to expose to MCP clients."""
+
+
 @dataclass(frozen=True)
 class OfficialCredentials:
     consumer_key: str
@@ -130,8 +134,11 @@ class CredentialStore:
                 else self.official(require_session=True)
             )
             if not official.account_id:
-                raise RuntimeError(
-                    "FATSECRET_ACCOUNT_ID is required for official user mutations"
+                raise ConfigurationError(
+                    "FATSECRET_ACCOUNT_ID is required for official user mutations. "
+                    "Configure a stable, non-secret account label in the environment "
+                    "or the account_id keyring entry, then retry with the same "
+                    "idempotency key; no write was attempted."
                 )
             value = official.account_id
         else:

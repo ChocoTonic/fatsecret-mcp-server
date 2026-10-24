@@ -12,7 +12,7 @@ license = "MIT"
 authors = [{ name = "ChocoTonic" }]
 dependencies = [
     "certifi>=2026.10.19",
-    "fatsecret>=5.1.0,<6",
+    "fatsecret>=6.0.2,<7",
     "filelock>=3.19,<4",
     "keyring>=25.6,<26",
     "mcp>=2.1,<3",

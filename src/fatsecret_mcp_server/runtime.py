@@ -30,9 +30,15 @@ from fatsecret.web.service import (
     RecipeOperationStore,
 )
 from filelock import FileLock
+from mcp.server.mcpserver.exceptions import ToolError
 
 from .capabilities import serialize
-from .credentials import CredentialStore, MemberCredentials, OfficialCredentials
+from .credentials import (
+    ConfigurationError,
+    CredentialStore,
+    MemberCredentials,
+    OfficialCredentials,
+)
 from .settings import Settings
 from .telemetry import Telemetry
 
@@ -147,6 +153,9 @@ class Runtime:
         started = time.perf_counter()
         try:
             result = callback()
+        except ConfigurationError as error:
+            self._record(tool_name, "error", started)
+            raise ToolError(str(error)) from error
         except Exception:
             self._record(tool_name, "error", started)
             raise
